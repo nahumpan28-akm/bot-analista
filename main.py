@@ -2,52 +2,135 @@ import os
 import asyncio
 import requests
 from telegram import Bot
-from telegram.ext import ApplicationBuilder, CommandHandler
+from datetime import datetime
 
-# 🔐 Variables de entorno (seguras, para no exponer el token)
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+# -----------------------
+# CONFIGURACIÓN DEL BOT
+# -----------------------
+TOKEN = os.getenv("TELEGRAM_TOKEN")  # tu token como variable de entorno
+CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID"))  # tu chat id como variable de entorno
+bot = Bot(token=TOKEN)
 
-if not TOKEN or not CHAT_ID:
-    raise ValueError("Debes configurar TELEGRAM_BOT_TOKEN y TELEGRAM_CHAT_ID en las variables de entorno")
+# -----------------------
+# CAPITAL INICIAL
+# -----------------------
+capital = 1500  # MXN en fichas
+capital_minimo = 1000
+capital_actual = capital
 
-# Función para obtener datos de Binance (ejemplo simple)
-def obtener_datos_binance():
-    url = "https://api.binance.com/api/v3/ticker/24hr"
-    response = requests.get(url)
-    if response.status_code != 200:
-        print("Error al obtener datos de Binance")
-        return []
+# -----------------------
+# ARCHIVOS
+# -----------------------
+FILENAME = "historial.txt"
 
-    data = response.json()
-    # Tomamos solo los primeros 5 elementos (ejemplo)
-    return data[:5] if isinstance(data, list) else []
+# -----------------------
+# FUNCIONES DE SIMULACIÓN DE TRADING
+# -----------------------
+async def obtener_datos_binance():
+    """Obtiene datos de Binance (solo precios actuales de BTC/USDT)"""
+    try:
+        response = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT")
+        data = response.json()
+        precio = float(data['price'])
+        return precio
+    except:
+        return None
 
-# Función de ciclo principal que revisa oportunidades
-async def ciclo(bot):
+async def obtener_datos_polymarket():
+    """Simulación de datos de Polymarket"""
+    # Normalmente necesitarías la API, aquí simulamos el precio de un mercado de predicción
+    import random
+    return random.uniform(0.3, 0.7)  # probabilidad de un evento
+
+def decidir_operacion(precio_binance, prob_polymarket):
+    """Decide si comprar, vender o no hacer nada"""
+    import random
+    decision = None
+    riesgo = random.choice(["muy bajo", "bajo", "medio", "alto"])
+    if riesgo == "muy bajo" and prob_polymarket > 0.55:
+        decision = "comprar"
+    elif riesgo == "bajo" and prob_polymarket > 0.6:
+        decision = "comprar"
+    elif riesgo == "medio" and prob_polymarket > 0.65:
+        decision = "comprar"
+    elif riesgo == "alto" and prob_polymarket > 0.7:
+        decision = "comprar"
+    else:
+        decision = "vender"
+    return decision, riesgo
+
+def ejecutar_operacion(decision, riesgo):
+    """Simula la operación y actualiza el capital"""
+    global capital_actual
+    import random
+    # Ganancia o pérdida según riesgo
+    factor = {"muy bajo": 0.01, "bajo": 0.03, "medio": 0.07, "alto": 0.15}
+    if decision == "comprar":
+        ganancia = capital_actual * factor[riesgo] * random.uniform(0.8, 1.2)
+        capital_actual += ganancia
+    else:
+        perdida = capital_actual * factor[riesgo] * random.uniform(0.8, 1.2)
+        capital_actual -= perdida
+    if capital_actual < capital_minimo:
+        return False  # desactivar bot
+    return True
+
+# -----------------------
+# FUNCIONES DE REPORTE
+# -----------------------
+async def enviar_reporte(mensaje_extra=""):
+    """Envía un reporte al chat de Telegram"""
+    global capital_actual
+    mensaje = f"Reporte de Bot:\nCapital actual: {capital_actual:.2f} fichas.\n{mensaje_extra}"
+    await bot.send_message(chat_id=CHAT_ID, text=mensaje)
+    with open(FILENAME, "a") as f:
+        f.write(f"{datetime.now()} - {mensaje}\n")
+
+# -----------------------
+# HANDLER DE MENSAJES
+# -----------------------
+async def revisar_mensajes():
+    """Revisa mensajes y responde a saludos"""
+    global capital_actual
+    offset = 0
     while True:
-        oportunidades = obtener_datos_binance()
-        for o in oportunidades:
-            mensaje = f"{o['symbol']}: Precio {o['lastPrice']}"
-            await bot.send_message(chat_id=CHAT_ID, text=mensaje)
-        await asyncio.sleep(60)  # espera 1 minuto
+        updates = bot.get_updates(offset=offset, timeout=5)
+        for update in updates:
+            offset = update.update_id + 1
+            if update.message:
+                texto = update.message.text.lower()
+                if "hola" in texto or "que tal" in texto:
+                    await enviar_reporte("¡Hola! Aquí está tu reporte solicitado.")
+        await asyncio.sleep(5)
 
-# Comando /start para Telegram
-async def start(update, context):
-    await context.bot.send_message(chat_id=update.effective_chat.id, text="¡Bot activo! 🚀")
-
-# Función principal del bot
+# -----------------------
+# LOOP PRINCIPAL
+# -----------------------
 async def main():
-    app = ApplicationBuilder().token(TOKEN).build()
-    
-    # Registrar el comando /start
-    app.add_handler(CommandHandler("start", start))
-    
-    # Crear tarea del ciclo de Binance
-    asyncio.create_task(ciclo(app.bot))
-    
-    print("Bot activo en servidor 🚀")
-    await app.run_polling()
+    global capital_actual
+    contador_reporte = 0
+    while True:
+        precio_binance = await obtener_datos_binance()
+        prob_polymarket = await obtener_datos_polymarket()
+        decision, riesgo = decidir_operacion(precio_binance, prob_polymarket)
+        activo = ejecutar_operacion(decision, riesgo)
+        if not activo:
+            await enviar_reporte("Capital muy bajo. Bot desactivado.")
+            break
+        contador_reporte += 1
+        if contador_reporte >= 5:  # cada 5 iteraciones ~5 min
+            await enviar_reporte(f"Operación reciente: {decision} con riesgo {riesgo}.")
+            contador_reporte = 0
+        await asyncio.sleep(60)  # espera 1 min por iteración
+
+# -----------------------
+# EJECUCIÓN CONCURRENTE
+# -----------------------
+async def correr_bot():
+    await asyncio.gather(
+        main(),
+        revisar_mensajes()
+    )
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(correr_bot())
