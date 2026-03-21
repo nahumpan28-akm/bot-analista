@@ -1,58 +1,33 @@
 import os
 import asyncio
 import requests
-from datetime import datetime
 import random
+from datetime import datetime
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-# -----------------------
-# CONFIGURACIÓN DEL BOT
-# -----------------------
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 if TOKEN is None:
-    raise Exception("Debes definir TELEGRAM_TOKEN en las variables de entorno")
+    raise Exception("Debes definir TELEGRAM_TOKEN")
 CHAT_ID_ENV = os.getenv("TELEGRAM_CHAT_ID")
 if CHAT_ID_ENV is None:
-    raise Exception("Debes definir TELEGRAM_CHAT_ID en las variables de entorno")
+    raise Exception("Debes definir TELEGRAM_CHAT_ID")
 CHAT_ID = int(CHAT_ID_ENV)
 
-# -----------------------
-# CAPITAL INICIAL
-# -----------------------
 capital = 1500
 capital_minimo = 1000
 capital_actual = capital
-
-# -----------------------
-# ARCHIVO DE HISTORIAL
-# -----------------------
 FILENAME = "historial.txt"
-
-# -----------------------
-# FUNCIONES DE TRADING
-# -----------------------
-async def obtener_datos_binance():
-    try:
-        response = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT")
-        data = response.json()
-        return float(data['price'])
-    except:
-        return None
 
 async def obtener_datos_polymarket():
     return random.uniform(0.3, 0.8)
 
 def decidir_operacion(prob_polymarket):
     riesgo = random.choice(["muy bajo", "bajo", "medio", "alto"])
-    decision = None
-    if riesgo == "muy bajo" and prob_polymarket > 0.55:
-        decision = "comprar"
-    elif riesgo == "bajo" and prob_polymarket > 0.6:
-        decision = "comprar"
-    elif riesgo == "medio" and prob_polymarket > 0.65:
-        decision = "comprar"
-    elif riesgo == "alto" and prob_polymarket > 0.75:
+    if ((riesgo == "muy bajo" and prob_polymarket > 0.55) or
+        (riesgo == "bajo" and prob_polymarket > 0.6) or
+        (riesgo == "medio" and prob_polymarket > 0.65) or
+        (riesgo == "alto" and prob_polymarket > 0.75)):
         decision = "comprar"
     else:
         decision = "vender"
@@ -72,14 +47,9 @@ def ejecutar_operacion(decision, riesgo):
         capital_actual -= ganancia_perdida
         resultado = f"Perdió {ganancia_perdida:.2f} fichas"
 
-    mensaje_operacion = f"Operación: {decision} | Riesgo: {riesgo} | Capital antes: {capital_antes:.2f} | {resultado} | Capital ahora: {capital_actual:.2f}"
+    mensaje = f"Operación: {decision} | Riesgo: {riesgo} | Capital antes: {capital_antes:.2f} | {resultado} | Capital ahora: {capital_actual:.2f}"
+    return capital_actual >= capital_minimo, mensaje
 
-    activo = capital_actual >= capital_minimo
-    return activo, mensaje_operacion
-
-# -----------------------
-# FUNCIONES DE REPORTE
-# -----------------------
 async def enviar_reporte(app, mensaje_extra=""):
     global capital_actual
     mensaje = f"Reporte de Bot:\nCapital actual: {capital_actual:.2f} fichas.\n{mensaje_extra}"
@@ -87,55 +57,38 @@ async def enviar_reporte(app, mensaje_extra=""):
     with open(FILENAME, "a") as f:
         f.write(f"{datetime.now()} - {mensaje}\n")
 
-# -----------------------
-# HANDLER DE COMANDOS TELEGRAM
-# -----------------------
+# Handlers de Telegram
 async def saludo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"¡Hola! Capital actual: {capital_actual:.2f} fichas.")
 
 async def que_tal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Capital actual: {capital_actual:.2f} fichas.")
 
-# -----------------------
-# LOOP PRINCIPAL DE TRADING
-# -----------------------
+# Loop de trading
 async def trading_loop(app):
     global capital_actual
-    contador_reporte = 0
-    while True:
-        prob_polymarket = await obtener_datos_polymarket()
-        decision, riesgo = decidir_operacion(prob_polymarket)
-        activo, mensaje_operacion = ejecutar_operacion(decision, riesgo)
-        print(mensaje_operacion)
-        contador_reporte += 1
-
-        # Enviar reporte cada 5 iteraciones
-        if contador_reporte >= 5:
-            await enviar_reporte(app, mensaje_operacion)
-            contador_reporte = 0
-
-        # Capital bajo: enviar mensaje y detener bot
-        if not activo:
-            await enviar_reporte(app, mensaje_operacion)
-            break
-
+    contador = 0
+    while capital_actual >= capital_minimo:
+        prob = await obtener_datos_polymarket()
+        decision, riesgo = decidir_operacion(prob)
+        activo, mensaje = ejecutar_operacion(decision, riesgo)
+        print(mensaje)  # logs locales
+        contador += 1
+        if contador >= 5:  # reporte cada 5 iteraciones
+            await enviar_reporte(app, mensaje)
+            contador = 0
         await asyncio.sleep(60)
 
-# -----------------------
-# CONFIGURACIÓN DEL BOT TELEGRAM
-# -----------------------
+# Configuración del bot
 app = ApplicationBuilder().token(TOKEN).build()
 app.add_handler(CommandHandler("hola", saludo))
 app.add_handler(CommandHandler("quetal", que_tal))
 
-# -----------------------
-# EJECUCIÓN
-# -----------------------
-async def main():
-    # Lanza trading_loop como tarea en el mismo event loop de la app
+# Inicia trading_loop como tarea en el mismo event loop
+async def start_trading(app):
     asyncio.create_task(trading_loop(app))
-    # Ejecuta polling de Telegram (maneja el event loop internamente)
-    await app.run_polling()
 
+# Ejecuta bot
 if __name__ == "__main__":
-    asyncio.run(main())
+    app.post_init = start_trading  # esto asegura que el loop ya está activo
+    app.run_polling()
