@@ -5,10 +5,8 @@ import os
 from telegram import Bot
 
 # 🔐 Variables de entorno (SEGURIDAD)
-TOKEN = os.getenv("8666785234:AAFQnIEhb6fJQhkF9Ru8xGWDlf3iUlIwfQk")
-CHAT_ID = os.getenv("8236390565")
-
-bot = Bot(token=TOKEN)
+TOKEN = os.getenv("TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")bot = Bot(token=TOKEN)
 
 # 🧠 IA básica
 def evaluar_trade(probabilidad, volumen):
