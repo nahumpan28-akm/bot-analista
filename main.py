@@ -3,14 +3,10 @@ import asyncio
 import requests
 from telegram import Update, Bot
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
-import nest_asyncio
 
 # 🔐 Variables de entorno
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")  # Pon tu token real aquí
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")  # Pon tu chat ID aquí
-
-# Aplicar fix para event loop en entornos tipo Jupyter / Docker
-nest_asyncio.apply()
 
 # Fichas iniciales
 fichas = 1500  # equivalentes a 1500 MXN
@@ -40,8 +36,6 @@ def obtener_datos_binance():
 
 # Función para obtener datos de Polymarket (simulación)
 def obtener_datos_polymarket():
-    # Aquí puedes integrar la API real de Polymarket
-    # Por ahora simulamos datos
     return [{"pregunta": "¿Bitcoin > 50k en 2 semanas?", "probabilidad": 0.55}]
 
 # Función de ciclo de inversión
@@ -96,4 +90,4 @@ async def main():
 
 # Ejecutar main
 if __name__ == "__main__":
-    asyncio.get_event_loop().run_until_complete(main())
+    asyncio.run(main())
