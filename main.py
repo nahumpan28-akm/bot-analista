@@ -8,7 +8,10 @@ from datetime import datetime
 # CONFIGURACIÓN DEL BOT
 # -----------------------
 TOKEN = os.getenv("TELEGRAM_TOKEN")  # tu token como variable de entorno
-CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID"))  # tu chat id como variable de entorno
+CHAT_ID_ENV = os.getenv("TELEGRAM_CHAT_ID")
+if TOKEN is None or CHAT_ID_ENV is None:
+    raise Exception("Debes definir TELEGRAM_TOKEN y TELEGRAM_CHAT_ID en las variables de entorno")
+CHAT_ID = int(CHAT_ID_ENV)
 bot = Bot(token=TOKEN)
 
 # -----------------------
@@ -38,7 +41,6 @@ async def obtener_datos_binance():
 
 async def obtener_datos_polymarket():
     """Simulación de datos de Polymarket"""
-    # Normalmente necesitarías la API, aquí simulamos el precio de un mercado de predicción
     import random
     return random.uniform(0.3, 0.7)  # probabilidad de un evento
 
@@ -63,7 +65,6 @@ def ejecutar_operacion(decision, riesgo):
     """Simula la operación y actualiza el capital"""
     global capital_actual
     import random
-    # Ganancia o pérdida según riesgo
     factor = {"muy bajo": 0.01, "bajo": 0.03, "medio": 0.07, "alto": 0.15}
     if decision == "comprar":
         ganancia = capital_actual * factor[riesgo] * random.uniform(0.8, 1.2)
@@ -92,15 +93,18 @@ async def enviar_reporte(mensaje_extra=""):
 async def revisar_mensajes():
     """Revisa mensajes y responde a saludos"""
     global capital_actual
-    offset = 0
+    offset = None
     while True:
-        updates = bot.get_updates(offset=offset, timeout=5)
-        for update in updates:
-            offset = update.update_id + 1
-            if update.message:
-                texto = update.message.text.lower()
-                if "hola" in texto or "que tal" in texto:
-                    await enviar_reporte("¡Hola! Aquí está tu reporte solicitado.")
+        try:
+            updates = await bot.get_updates(offset=offset, timeout=10)
+            for update in updates:
+                offset = update.update_id + 1
+                if update.message:
+                    texto = update.message.text.lower()
+                    if "hola" in texto or "que tal" in texto:
+                        await enviar_reporte("¡Hola! Aquí está tu reporte solicitado.")
+        except Exception as e:
+            print("Error revisando mensajes:", e)
         await asyncio.sleep(5)
 
 # -----------------------
