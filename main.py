@@ -1,19 +1,22 @@
 import os
 import asyncio
 import requests
-from telegram import Bot
 from datetime import datetime
 import random
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 # -----------------------
 # CONFIGURACIÓN DEL BOT
 # -----------------------
 TOKEN = os.getenv("TELEGRAM_TOKEN")
+if TOKEN is None:
+    raise Exception("Debes definir TELEGRAM_TOKEN en las variables de entorno")
+
 CHAT_ID_ENV = os.getenv("TELEGRAM_CHAT_ID")
-if TOKEN is None or CHAT_ID_ENV is None:
-    raise Exception("Debes definir TELEGRAM_TOKEN y TELEGRAM_CHAT_ID en las variables de entorno")
+if CHAT_ID_ENV is None:
+    raise Exception("Debes definir TELEGRAM_CHAT_ID en las variables de entorno")
 CHAT_ID = int(CHAT_ID_ENV)
-bot = Bot(token=TOKEN)
 
 # -----------------------
 # CAPITAL INICIAL
@@ -23,7 +26,7 @@ capital_minimo = 1000
 capital_actual = capital
 
 # -----------------------
-# ARCHIVOS
+# ARCHIVO DE HISTORIAL
 # -----------------------
 FILENAME = "historial.txt"
 
@@ -82,42 +85,33 @@ def ejecutar_operacion(decision, riesgo):
 async def enviar_reporte(mensaje_extra=""):
     global capital_actual
     mensaje = f"Reporte de Bot:\nCapital actual: {capital_actual:.2f} fichas.\n{mensaje_extra}"
-    await bot.send_message(chat_id=CHAT_ID, text=mensaje)
+    async with app.bot:
+        await app.bot.send_message(chat_id=CHAT_ID, text=mensaje)
     with open(FILENAME, "a") as f:
         f.write(f"{datetime.now()} - {mensaje}\n")
 
 # -----------------------
-# HANDLER DE MENSAJES
+# HANDLER DE COMANDOS TELEGRAM
 # -----------------------
-async def revisar_mensajes():
-    global capital_actual
-    offset = None
-    while True:
-        try:
-            updates = await bot.get_updates(offset=offset, timeout=10)
-            for update in updates:
-                offset = update.update_id + 1
-                if update.message:
-                    texto = update.message.text.lower()
-                    if "hola" in texto or "que tal" in texto:
-                        await enviar_reporte("¡Hola! Aquí está tu reporte solicitado.")
-        except Exception as e:
-            print("Error revisando mensajes:", e)
-        await asyncio.sleep(5)
+async def saludo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(f"¡Hola! Capital actual: {capital_actual:.2f} fichas.")
+
+async def que_tal(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(f"Capital actual: {capital_actual:.2f} fichas.")
 
 # -----------------------
-# LOOP PRINCIPAL
+# LOOP PRINCIPAL ASÍNCRONO
 # -----------------------
-async def main():
+async def trading_loop():
     global capital_actual
     contador_reporte = 0
     while True:
         prob_polymarket = await obtener_datos_polymarket()
         decision, riesgo = decidir_operacion(prob_polymarket)
         activo, mensaje_operacion, _, _ = ejecutar_operacion(decision, riesgo)
-        print(mensaje_operacion)  # para ver en logs de Railway lo que hace
-        contador_reporte += 1
+        print(mensaje_operacion)  # para ver operaciones en logs
 
+        contador_reporte += 1
         if contador_reporte >= 5:
             await enviar_reporte(mensaje_operacion)
             contador_reporte = 0
@@ -126,16 +120,24 @@ async def main():
             await enviar_reporte(mensaje_operacion)
             break
 
-        await asyncio.sleep(60)
+        await asyncio.sleep(60)  # 1 min por iteración
+
+# -----------------------
+# CONFIGURACIÓN DEL BOT TELEGRAM
+# -----------------------
+app = ApplicationBuilder().token(TOKEN).build()
+app.add_handler(CommandHandler("hola", saludo))
+app.add_handler(CommandHandler("quetal", que_tal))
 
 # -----------------------
 # EJECUCIÓN CONCURRENTE
 # -----------------------
-async def correr_bot():
+async def main():
+    # Ejecuta el trading loop junto con el polling de Telegram
     await asyncio.gather(
-        main(),
-        revisar_mensajes()
+        trading_loop(),
+        app.run_polling()
     )
 
 if __name__ == "__main__":
-    asyncio.run(correr_bot())
+    asyncio.run(main())
