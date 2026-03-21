@@ -6,7 +6,13 @@ from telegram import Bot
 
 # 🔐 Variables de entorno (SEGURIDAD)
 TOKEN = os.getenv("TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")bot = Bot(token=TOKEN)
+CHAT_ID = os.getenv("CHAT_ID")
+
+# Validación básica (evita errores silenciosos)
+if not TOKEN or not CHAT_ID:
+    raise ValueError("Faltan variables de entorno TOKEN o CHAT_ID")
+
+bot = Bot(token=TOKEN)
 
 # 🧠 IA básica
 def evaluar_trade(probabilidad, volumen):
@@ -28,7 +34,12 @@ def evaluar_trade(probabilidad, volumen):
 # 📡 Obtener datos filtrados de Polymarket
 def obtener_datos():
     url = "https://gamma-api.polymarket.com/markets"
-    data = requests.get(url).json()
+    
+    try:
+        data = requests.get(url).json()
+    except Exception as e:
+        print("Error al obtener datos:", e)
+        return []
 
     mercados_validos = []
 
@@ -75,7 +86,10 @@ Volumen: {int(volumen)}
 {decision}
 """
 
-                await bot.send_message(chat_id=CHAT_ID, text=mensaje)
+                await bot.send_message(
+                    chat_id=CHAT_ID,
+                    text=mensaje
+                )
 
             except Exception as e:
                 print("Error en mercado:", e)
@@ -83,4 +97,5 @@ Volumen: {int(volumen)}
         await asyncio.sleep(300)  # cada 5 minutos
 
 # ▶️ Ejecutar
-asyncio.run(ciclo())
+if __name__ == "__main__":
+    asyncio.run(ciclo())
