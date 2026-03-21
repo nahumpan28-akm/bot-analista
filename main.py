@@ -20,15 +20,13 @@ historial = []  # Guardará cada operación
 
 # 🧠 IA básica para Polymarket
 def evaluar_polymarket(probabilidad, volumen):
-    # Solo operaciones con probabilidad alta y volumen decente
     if volumen < 1000 or probabilidad < 0.8:
         return False  # no invertir
     return True
 
 # 🧠 IA básica para Binance
 def evaluar_binance(precio_actual, tendencia_14dias):
-    # Solo invertir si la tendencia indica subida clara
-    if tendencia_14dias < 0.05:  # menos del 5% de subida en 14 días → ignorar
+    if tendencia_14dias < 0.05:  # menos del 5% de subida → ignorar
         return False
     return True
 
@@ -36,7 +34,7 @@ def evaluar_binance(precio_actual, tendencia_14dias):
 def obtener_datos_polymarket():
     try:
         url = "https://gamma-api.polymarket.com/markets"
-        data = requests.get(url).json()
+        data = requests.get(url, timeout=10).json()
     except Exception as e:
         print("Error Polymarket:", e)
         return []
@@ -58,24 +56,29 @@ def obtener_datos_polymarket():
                         "prob": prob,
                         "volumen": volumen
                     })
-        except:
+        except Exception as e:
+            print("Error procesando mercado Polymarket:", e)
             continue
     return mercados_validos[:3]
 
-# 📡 Obtener datos Binance (simplificación: solo precio + tendencia 14 días)
+# 📡 Obtener datos Binance
 def obtener_datos_binance():
     try:
         url = "https://api.binance.com/api/v3/ticker/24hr"
-        data = requests.get(url).json()
+        response = requests.get(url, timeout=10)
+        data = response.json()
     except Exception as e:
         print("Error Binance:", e)
+        return []
+
+    if not isinstance(data, list):
+        print("Binance retornó datos inesperados:", data)
         return []
 
     mercados_validos = []
     for m in data[:5]:  # solo los primeros 5 para prueba
         try:
             precio = float(m.get("lastPrice", 0))
-            # tendencia 14 días simulada: porcentaje cambio de precio
             cambio = float(m.get("priceChangePercent", 0)) / 100
             if evaluar_binance(precio, cambio):
                 mercados_validos.append({
@@ -84,7 +87,8 @@ def obtener_datos_binance():
                     "precio": precio,
                     "tendencia": cambio
                 })
-        except:
+        except Exception as e:
+            print("Error procesando mercado Binance:", e)
             continue
     return mercados_validos
 
@@ -112,7 +116,10 @@ async def ciclo():
                 "nombre": op["nombre"],
                 "inversion": inversion
             })
-            mensaje += f"{op['tipo']}: {op['nombre']} → +{inversion} fichas\n"
+            if op["tipo"] == "Polymarket":
+                mensaje += f"{op['tipo']}: {op['nombre']} → Prob: {op['prob']:.2f}, Volumen: {int(op['volumen'])} → +{inversion} fichas\n"
+            else:
+                mensaje += f"{op['tipo']}: {op['nombre']} → Precio: {op['precio']}, Tendencia: {op['tendencia']*100:.2f}% → +{inversion} fichas\n"
 
         if oportunidades:
             try:
