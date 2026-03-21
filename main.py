@@ -3,11 +3,12 @@ import asyncio
 import requests
 from telegram import Bot
 from datetime import datetime
+import random
 
 # -----------------------
 # CONFIGURACIÓN DEL BOT
 # -----------------------
-TOKEN = os.getenv("TELEGRAM_TOKEN")  # tu token como variable de entorno
+TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID_ENV = os.getenv("TELEGRAM_CHAT_ID")
 if TOKEN is None or CHAT_ID_ENV is None:
     raise Exception("Debes definir TELEGRAM_TOKEN y TELEGRAM_CHAT_ID en las variables de entorno")
@@ -27,60 +28,58 @@ capital_actual = capital
 FILENAME = "historial.txt"
 
 # -----------------------
-# FUNCIONES DE SIMULACIÓN DE TRADING
+# FUNCIONES DE TRADING
 # -----------------------
 async def obtener_datos_binance():
-    """Obtiene datos de Binance (solo precios actuales de BTC/USDT)"""
     try:
         response = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT")
         data = response.json()
-        precio = float(data['price'])
-        return precio
+        return float(data['price'])
     except:
         return None
 
 async def obtener_datos_polymarket():
-    """Simulación de datos de Polymarket"""
-    import random
-    return random.uniform(0.3, 0.7)  # probabilidad de un evento
+    return random.uniform(0.3, 0.8)
 
-def decidir_operacion(precio_binance, prob_polymarket):
-    """Decide si comprar, vender o no hacer nada"""
-    import random
-    decision = None
+def decidir_operacion(prob_polymarket):
     riesgo = random.choice(["muy bajo", "bajo", "medio", "alto"])
+    decision = None
     if riesgo == "muy bajo" and prob_polymarket > 0.55:
         decision = "comprar"
     elif riesgo == "bajo" and prob_polymarket > 0.6:
         decision = "comprar"
     elif riesgo == "medio" and prob_polymarket > 0.65:
         decision = "comprar"
-    elif riesgo == "alto" and prob_polymarket > 0.7:
+    elif riesgo == "alto" and prob_polymarket > 0.75:
         decision = "comprar"
     else:
         decision = "vender"
     return decision, riesgo
 
 def ejecutar_operacion(decision, riesgo):
-    """Simula la operación y actualiza el capital"""
     global capital_actual
-    import random
-    factor = {"muy bajo": 0.01, "bajo": 0.03, "medio": 0.07, "alto": 0.15}
+    factor = {"muy bajo": 0.02, "bajo": 0.04, "medio": 0.07, "alto": 0.12}
+    cantidad = capital_actual * factor[riesgo]
+    ganancia_perdida = cantidad * random.uniform(0.9, 1.1)
+    capital_antes = capital_actual
+
     if decision == "comprar":
-        ganancia = capital_actual * factor[riesgo] * random.uniform(0.8, 1.2)
-        capital_actual += ganancia
+        capital_actual += ganancia_perdida
+        resultado = f"Ganó {ganancia_perdida:.2f} fichas"
     else:
-        perdida = capital_actual * factor[riesgo] * random.uniform(0.8, 1.2)
-        capital_actual -= perdida
+        capital_actual -= ganancia_perdida
+        resultado = f"Perdió {ganancia_perdida:.2f} fichas"
+
     if capital_actual < capital_minimo:
-        return False  # desactivar bot
-    return True
+        return False, f"{resultado}. Capital mínimo alcanzado, bot se desactiva.", ganancia_perdida, capital_antes
+
+    mensaje_operacion = f"Operación: {decision} | Riesgo: {riesgo} | Capital antes: {capital_antes:.2f} | {resultado} | Capital ahora: {capital_actual:.2f}"
+    return True, mensaje_operacion, ganancia_perdida, capital_antes
 
 # -----------------------
 # FUNCIONES DE REPORTE
 # -----------------------
 async def enviar_reporte(mensaje_extra=""):
-    """Envía un reporte al chat de Telegram"""
     global capital_actual
     mensaje = f"Reporte de Bot:\nCapital actual: {capital_actual:.2f} fichas.\n{mensaje_extra}"
     await bot.send_message(chat_id=CHAT_ID, text=mensaje)
@@ -91,7 +90,6 @@ async def enviar_reporte(mensaje_extra=""):
 # HANDLER DE MENSAJES
 # -----------------------
 async def revisar_mensajes():
-    """Revisa mensajes y responde a saludos"""
     global capital_actual
     offset = None
     while True:
@@ -114,18 +112,21 @@ async def main():
     global capital_actual
     contador_reporte = 0
     while True:
-        precio_binance = await obtener_datos_binance()
         prob_polymarket = await obtener_datos_polymarket()
-        decision, riesgo = decidir_operacion(precio_binance, prob_polymarket)
-        activo = ejecutar_operacion(decision, riesgo)
-        if not activo:
-            await enviar_reporte("Capital muy bajo. Bot desactivado.")
-            break
+        decision, riesgo = decidir_operacion(prob_polymarket)
+        activo, mensaje_operacion, _, _ = ejecutar_operacion(decision, riesgo)
+        print(mensaje_operacion)  # para ver en logs de Railway lo que hace
         contador_reporte += 1
-        if contador_reporte >= 5:  # cada 5 iteraciones ~5 min
-            await enviar_reporte(f"Operación reciente: {decision} con riesgo {riesgo}.")
+
+        if contador_reporte >= 5:
+            await enviar_reporte(mensaje_operacion)
             contador_reporte = 0
-        await asyncio.sleep(60)  # espera 1 min por iteración
+
+        if not activo:
+            await enviar_reporte(mensaje_operacion)
+            break
+
+        await asyncio.sleep(60)
 
 # -----------------------
 # EJECUCIÓN CONCURRENTE
