@@ -3,19 +3,19 @@ import requests
 import random
 import time
 from datetime import datetime
-from telegram import Bot
+import telebot  # pip install pyTelegramBotAPI==4.13.0
 
 # -----------------------
 # CONFIGURACIÓN DEL BOT
 # -----------------------
-TOKEN = os.getenv("TELEGRAM_TOKEN")  # tu token como variable de entorno
-CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID"))  # tu chat id como variable de entorno
-bot = Bot(token=TOKEN)
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID"))
+bot = telebot.TeleBot(TOKEN)
 
 # -----------------------
 # CAPITAL INICIAL
 # -----------------------
-capital = 1500  # fichas
+capital = 1500
 capital_minimo = 1000
 capital_actual = capital
 
@@ -28,7 +28,6 @@ FILENAME = "historial.txt"
 # FUNCIONES DE TRADING
 # -----------------------
 def obtener_datos_binance():
-    """Obtiene el precio actual de BTC/USDT"""
     try:
         response = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=5)
         data = response.json()
@@ -37,16 +36,13 @@ def obtener_datos_binance():
         return None
 
 def decidir_operacion(precio_binance):
-    """Decisión segura basada en movimientos aleatorios muy conservadores"""
-    # Riesgo muy bajo
-    decision = random.choice(["comprar", "vender", "nada"])  # a veces no hace nada
+    decision = random.choice(["comprar", "vender", "nada"])
     riesgo = "muy bajo"
     return decision, riesgo
 
 def ejecutar_operacion(decision, riesgo):
-    """Ejecuta la operación y actualiza capital"""
     global capital_actual
-    factor = {"muy bajo": 0.01}  # solo riesgo muy bajo
+    factor = {"muy bajo": 0.01}
     capital_antes = capital_actual
 
     if decision == "comprar":
@@ -65,24 +61,20 @@ def ejecutar_operacion(decision, riesgo):
         f.write(f"{datetime.now()} - {mensaje}\n")
 
     print(mensaje)
-    enviar_reporte(mensaje)
+    try:
+        bot.send_message(CHAT_ID, mensaje)
+    except Exception as e:
+        print(f"No se pudo enviar mensaje a Telegram: {e}")
 
     if capital_actual < capital_minimo:
         aviso = "Capital muy bajo. Bot detenido."
         print(aviso)
-        enviar_reporte(aviso)
-        return False  # detiene bot
+        try:
+            bot.send_message(CHAT_ID, aviso)
+        except:
+            pass
+        return False
     return True
-
-# -----------------------
-# FUNCIONES DE REPORTE
-# -----------------------
-def enviar_reporte(mensaje):
-    """Envía un mensaje a Telegram"""
-    try:
-        bot.send_message(chat_id=CHAT_ID, text=mensaje)
-    except Exception as e:
-        print(f"No se pudo enviar mensaje a Telegram: {e}")
 
 # -----------------------
 # LOOP PRINCIPAL
@@ -95,7 +87,7 @@ def main():
         activo = ejecutar_operacion(decision, riesgo)
         if not activo:
             break
-        time.sleep(60)  # espera 1 minuto entre operaciones
+        time.sleep(60)
 
 if __name__ == "__main__":
     main()
