@@ -1,104 +1,101 @@
 import os
+import requests
 import random
-import asyncio
+import time
 from datetime import datetime
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram import Bot
 
 # -----------------------
 # CONFIGURACIÓN DEL BOT
 # -----------------------
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID_ENV = os.getenv("TELEGRAM_CHAT_ID")
-if TOKEN is None or CHAT_ID_ENV is None:
-    raise Exception("Debes definir TELEGRAM_TOKEN y TELEGRAM_CHAT_ID")
-CHAT_ID = int(CHAT_ID_ENV)
+TOKEN = os.getenv("TELEGRAM_TOKEN")  # tu token como variable de entorno
+CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID"))  # tu chat id como variable de entorno
+bot = Bot(token=TOKEN)
 
 # -----------------------
 # CAPITAL INICIAL
 # -----------------------
-capital_inicial = 1500
+capital = 1500  # fichas
 capital_minimo = 1000
-capital_actual = capital_inicial
+capital_actual = capital
+
+# -----------------------
+# ARCHIVO DE HISTORIAL
+# -----------------------
 FILENAME = "historial.txt"
 
 # -----------------------
-# FUNCIONES DE TRADING CONSERVADOR
+# FUNCIONES DE TRADING
 # -----------------------
-async def obtener_probabilidad_segura():
-    """Simula probabilidad de mercado, más segura"""
-    return random.uniform(0.4, 0.7)  # más centrado, evita extremos
+def obtener_datos_binance():
+    """Obtiene el precio actual de BTC/USDT"""
+    try:
+        response = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=5)
+        data = response.json()
+        return float(data['price'])
+    except:
+        return None
 
-def decidir_operacion_segura(prob):
-    """Decide si comprar o vender con riesgo muy bajo"""
-    riesgo = "muy bajo"  # siempre muy bajo
-    if prob > 0.52:  # solo compramos si la probabilidad es favorable
-        decision = "comprar"
-    else:
-        decision = "vender"
+def decidir_operacion(precio_binance):
+    """Decisión segura basada en movimientos aleatorios muy conservadores"""
+    # Riesgo muy bajo
+    decision = random.choice(["comprar", "vender", "nada"])  # a veces no hace nada
+    riesgo = "muy bajo"
     return decision, riesgo
 
-def ejecutar_operacion_segura(decision, riesgo):
-    """Ejecuta operación segura"""
+def ejecutar_operacion(decision, riesgo):
+    """Ejecuta la operación y actualiza capital"""
     global capital_actual
-    factor = {"muy bajo": 0.01}  # ganancias/pérdidas muy pequeñas
-    cantidad = capital_actual * factor[riesgo]
+    factor = {"muy bajo": 0.01}  # solo riesgo muy bajo
     capital_antes = capital_actual
 
     if decision == "comprar":
-        capital_actual += cantidad
-        resultado = f"Ganó {cantidad:.2f} fichas"
+        ganancia = capital_actual * factor[riesgo] * random.uniform(0.8, 1.2)
+        capital_actual += ganancia
+        mensaje = f"Operación: comprar | Riesgo: {riesgo} | Capital antes: {capital_antes:.2f} | Ganó {ganancia:.2f} fichas | Capital ahora: {capital_actual:.2f}"
+    elif decision == "vender":
+        perdida = capital_actual * factor[riesgo] * random.uniform(0.8, 1.2)
+        capital_actual -= perdida
+        mensaje = f"Operación: vender | Riesgo: {riesgo} | Capital antes: {capital_antes:.2f} | Perdió {perdida:.2f} fichas | Capital ahora: {capital_actual:.2f}"
     else:
-        capital_actual -= cantidad
-        resultado = f"Perdió {cantidad:.2f} fichas"
+        mensaje = f"Operación: nada | Capital: {capital_actual:.2f}"
 
-    mensaje = f"Operación: {decision} | Riesgo: {riesgo} | Capital antes: {capital_antes:.2f} | {resultado} | Capital ahora: {capital_actual:.2f}"
-    return capital_actual >= capital_minimo, mensaje
-
-# -----------------------
-# REPORTE
-# -----------------------
-async def enviar_reporte(app, mensaje_extra=""):
-    mensaje = f"Reporte de Bot:\nCapital actual: {capital_actual:.2f} fichas.\n{mensaje_extra}"
-    await app.bot.send_message(chat_id=CHAT_ID, text=mensaje)
+    # Guardar historial
     with open(FILENAME, "a") as f:
         f.write(f"{datetime.now()} - {mensaje}\n")
 
-# -----------------------
-# HANDLERS
-# -----------------------
-async def saludo(update, context: ContextTypes.DEFAULT_TYPE):
-    """Responde al comando /hola"""
-    await update.message.reply_text(f"¡Hola! Capital actual: {capital_actual:.2f} fichas.")
+    print(mensaje)
+    enviar_reporte(mensaje)
+
+    if capital_actual < capital_minimo:
+        aviso = "Capital muy bajo. Bot detenido."
+        print(aviso)
+        enviar_reporte(aviso)
+        return False  # detiene bot
+    return True
 
 # -----------------------
-# LOOP DE TRADING SEGURA
+# FUNCIONES DE REPORTE
 # -----------------------
-async def trading_loop_segura(app):
-    global capital_actual
-    while capital_actual >= capital_minimo:
-        prob = await obtener_probabilidad_segura()
-        decision, riesgo = decidir_operacion_segura(prob)
-        activo, mensaje = ejecutar_operacion_segura(decision, riesgo)
-        print(mensaje)
-        await enviar_reporte(app, mensaje)
+def enviar_reporte(mensaje):
+    """Envía un mensaje a Telegram"""
+    try:
+        bot.send_message(chat_id=CHAT_ID, text=mensaje)
+    except Exception as e:
+        print(f"No se pudo enviar mensaje a Telegram: {e}")
+
+# -----------------------
+# LOOP PRINCIPAL
+# -----------------------
+def main():
+    print("Bot de trading seguro iniciado...")
+    while True:
+        precio_binance = obtener_datos_binance()
+        decision, riesgo = decidir_operacion(precio_binance)
+        activo = ejecutar_operacion(decision, riesgo)
         if not activo:
-            await enviar_reporte(app, "Capital muy bajo. Bot detenido.")
             break
-        await asyncio.sleep(60)  # espera 1 minuto
-
-# -----------------------
-# EJECUCIÓN PRINCIPAL
-# -----------------------
-async def main():
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("hola", saludo))
-    asyncio.create_task(trading_loop_segura(app))
-    await app.run_polling()
+        time.sleep(60)  # espera 1 minuto entre operaciones
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except RuntimeError:
-        # reutiliza loop si ya está activo
-        loop = asyncio.get_event_loop()
-        loop.create_task(main())
+    main()
