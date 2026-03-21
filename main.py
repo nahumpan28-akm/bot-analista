@@ -12,7 +12,6 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 if TOKEN is None:
     raise Exception("Debes definir TELEGRAM_TOKEN en las variables de entorno")
-
 CHAT_ID_ENV = os.getenv("TELEGRAM_CHAT_ID")
 if CHAT_ID_ENV is None:
     raise Exception("Debes definir TELEGRAM_CHAT_ID en las variables de entorno")
@@ -21,7 +20,7 @@ CHAT_ID = int(CHAT_ID_ENV)
 # -----------------------
 # CAPITAL INICIAL
 # -----------------------
-capital = 1500  # MXN en fichas
+capital = 1500
 capital_minimo = 1000
 capital_actual = capital
 
@@ -73,20 +72,18 @@ def ejecutar_operacion(decision, riesgo):
         capital_actual -= ganancia_perdida
         resultado = f"Perdió {ganancia_perdida:.2f} fichas"
 
-    if capital_actual < capital_minimo:
-        return False, f"{resultado}. Capital mínimo alcanzado, bot se desactiva.", ganancia_perdida, capital_antes
-
     mensaje_operacion = f"Operación: {decision} | Riesgo: {riesgo} | Capital antes: {capital_antes:.2f} | {resultado} | Capital ahora: {capital_actual:.2f}"
-    return True, mensaje_operacion, ganancia_perdida, capital_antes
+
+    activo = capital_actual >= capital_minimo
+    return activo, mensaje_operacion
 
 # -----------------------
 # FUNCIONES DE REPORTE
 # -----------------------
-async def enviar_reporte(mensaje_extra=""):
+async def enviar_reporte(app, mensaje_extra=""):
     global capital_actual
     mensaje = f"Reporte de Bot:\nCapital actual: {capital_actual:.2f} fichas.\n{mensaje_extra}"
-    async with app.bot:
-        await app.bot.send_message(chat_id=CHAT_ID, text=mensaje)
+    await app.bot.send_message(chat_id=CHAT_ID, text=mensaje)
     with open(FILENAME, "a") as f:
         f.write(f"{datetime.now()} - {mensaje}\n")
 
@@ -100,27 +97,29 @@ async def que_tal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Capital actual: {capital_actual:.2f} fichas.")
 
 # -----------------------
-# LOOP PRINCIPAL ASÍNCRONO
+# LOOP PRINCIPAL DE TRADING
 # -----------------------
-async def trading_loop():
+async def trading_loop(app):
     global capital_actual
     contador_reporte = 0
     while True:
         prob_polymarket = await obtener_datos_polymarket()
         decision, riesgo = decidir_operacion(prob_polymarket)
-        activo, mensaje_operacion, _, _ = ejecutar_operacion(decision, riesgo)
-        print(mensaje_operacion)  # para ver operaciones en logs
-
+        activo, mensaje_operacion = ejecutar_operacion(decision, riesgo)
+        print(mensaje_operacion)
         contador_reporte += 1
+
+        # Enviar reporte cada 5 iteraciones
         if contador_reporte >= 5:
-            await enviar_reporte(mensaje_operacion)
+            await enviar_reporte(app, mensaje_operacion)
             contador_reporte = 0
 
+        # Capital bajo: enviar mensaje y detener bot
         if not activo:
-            await enviar_reporte(mensaje_operacion)
+            await enviar_reporte(app, mensaje_operacion)
             break
 
-        await asyncio.sleep(60)  # 1 min por iteración
+        await asyncio.sleep(60)
 
 # -----------------------
 # CONFIGURACIÓN DEL BOT TELEGRAM
@@ -130,14 +129,13 @@ app.add_handler(CommandHandler("hola", saludo))
 app.add_handler(CommandHandler("quetal", que_tal))
 
 # -----------------------
-# EJECUCIÓN CONCURRENTE
+# EJECUCIÓN
 # -----------------------
 async def main():
-    # Ejecuta el trading loop junto con el polling de Telegram
-    await asyncio.gather(
-        trading_loop(),
-        app.run_polling()
-    )
+    # Lanza trading_loop como tarea en el mismo event loop de la app
+    asyncio.create_task(trading_loop(app))
+    # Ejecuta polling de Telegram (maneja el event loop internamente)
+    await app.run_polling()
 
 if __name__ == "__main__":
     asyncio.run(main())
