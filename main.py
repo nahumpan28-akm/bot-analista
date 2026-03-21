@@ -1,8 +1,9 @@
 import asyncio
 import requests
+import json
 from telegram import Bot
 
-TOKEN = "8666785234:AAH5ECWNv3pJYmFVQ449CsSq58Yzy-tRWdI"
+TOKEN = "8666785234:AAH_MifjgyY2IB5OM8htFR_MSU7_OZAewms"
 CHAT_ID = "8236390565"
 
 bot = Bot(token=TOKEN)
@@ -27,8 +28,8 @@ def evaluar_trade(probabilidad, volumen):
 # 📡 Obtener datos reales
 def obtener_datos():
     url = "https://gamma-api.polymarket.com/markets"
-    data = requests.get(url).json()
-    return data[:3]  # solo 3 mercados para probar
+    response = requests.get(url)
+    return response.json()[:3]
 
 # 🔁 Ciclo automático
 async def ciclo():
@@ -37,16 +38,23 @@ async def ciclo():
 
         for mercado in mercados:
             try:
-                pregunta = mercado["question"]
-                prob = float(mercado["outcomes"][0]["price"])
-                volumen = float(mercado["volume"])
+                pregunta = mercado.get("question", "Sin nombre")
+
+                prices_raw = mercado.get("outcomePrices", "[]")
+                prices = json.loads(prices_raw)
+
+                if len(prices) == 0:
+                    continue
+
+                prob = float(prices[0])
+                volumen = float(mercado.get("volume", 0))
 
                 decision = evaluar_trade(prob, volumen)
 
                 mensaje = f"""
 📊 {pregunta}
 
-Probabilidad: {prob}
+Probabilidad: {prob:.2f}
 Volumen: {volumen}
 
 {decision}
