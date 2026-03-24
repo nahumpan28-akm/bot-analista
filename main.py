@@ -1,38 +1,21 @@
 import os
 import random
 import asyncio
-from telegram import Bot
+from telegram import Update, Bot
+from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 
 TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-if not TOKEN or not CHAT_ID:
-    raise ValueError("Faltan variables de entorno")
-
-bot = Bot(token=TOKEN)
-
 capital = 1500.0
-ultimo_mensaje = ""
 
-# 📩 AHORA ES ASYNC
-async def enviar_mensaje(mensaje):
-    global ultimo_mensaje
-    try:
-        if mensaje != ultimo_mensaje:
-            await bot.send_message(chat_id=CHAT_ID, text=mensaje)
-            ultimo_mensaje = mensaje
-    except Exception as e:
-        print("Error:", e)
-
+# 🧠 Simulación
 def operar():
     global capital
 
     riesgo = random.choice(["muy bajo", "bajo"])
 
-    if riesgo == "muy bajo":
-        cambio = random.uniform(-15, 15)
-    else:
-        cambio = random.uniform(-50, 50)
+    cambio = random.uniform(-15, 15) if riesgo == "muy bajo" else random.uniform(-50, 50)
 
     capital_antes = capital
     capital += cambio
@@ -44,7 +27,7 @@ def operar():
         accion = "VENDER"
         resultado = f"Perdió {abs(cambio):.2f}"
 
-    mensaje = (
+    return (
         f"📊 Operación\n"
         f"Acción: {accion}\n"
         f"Riesgo: {riesgo}\n"
@@ -53,18 +36,43 @@ def operar():
         f"Capital actual: {capital:.2f}"
     )
 
-    print(mensaje)
-    return mensaje
+# 🤖 Responder mensajes
+async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    texto = update.message.text.lower()
 
-# 🔁 LOOP ASYNC
-async def main():
-    await enviar_mensaje("🤖 Bot activo")
-    print("Bot corriendo...")
+    if "hola" in texto:
+        await update.message.reply_text("👋 Hola, estoy activo")
 
+    elif "status" in texto:
+        await update.message.reply_text(f"💰 Capital actual: {capital:.2f}")
+
+    else:
+        await update.message.reply_text("No entendí, prueba: hola / status")
+
+# 🔁 Loop automático
+async def ciclo(bot: Bot):
     while True:
         mensaje = operar()
-        await enviar_mensaje(mensaje)
+        try:
+            await bot.send_message(chat_id=CHAT_ID, text=mensaje)
+        except Exception as e:
+            print("Error:", e)
+
         await asyncio.sleep(30)
 
-# ▶️ EJECUTAR
+# ▶️ MAIN
+async def main():
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, responder))
+
+    bot = Bot(token=TOKEN)
+
+    # Ejecutar ciclo en paralelo
+    asyncio.create_task(ciclo(bot))
+
+    print("Bot corriendo...")
+    await app.run_polling()
+
+# ▶️ Ejecutar
 asyncio.run(main())
