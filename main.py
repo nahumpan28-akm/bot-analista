@@ -1,7 +1,7 @@
 import os
 import random
 import asyncio
-from telegram import Update, Bot
+from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 
 TOKEN = os.getenv("TOKEN")
@@ -14,7 +14,6 @@ def operar():
     global capital
 
     riesgo = random.choice(["muy bajo", "bajo"])
-
     cambio = random.uniform(-15, 15) if riesgo == "muy bajo" else random.uniform(-50, 50)
 
     capital_antes = capital
@@ -47,32 +46,29 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"💰 Capital actual: {capital:.2f}")
 
     else:
-        await update.message.reply_text("No entendí, prueba: hola / status")
+        await update.message.reply_text("Comandos: hola / status")
 
 # 🔁 Loop automático
-async def ciclo(bot: Bot):
-    while True:
-        mensaje = operar()
-        try:
-            await bot.send_message(chat_id=CHAT_ID, text=mensaje)
-        except Exception as e:
-            print("Error:", e)
+async def ciclo(context: ContextTypes.DEFAULT_TYPE):
+    mensaje = operar()
+    try:
+        await context.bot.send_message(chat_id=CHAT_ID, text=mensaje)
+    except Exception as e:
+        print("Error:", e)
 
-        await asyncio.sleep(30)
-
-# ▶️ MAIN
-async def main():
+# ▶️ MAIN SIN asyncio.run()
+def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
+    # responder mensajes
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, responder))
 
-    bot = Bot(token=TOKEN)
-
-    # Ejecutar ciclo en paralelo
-    asyncio.create_task(ciclo(bot))
+    # ejecutar cada 30 segundos
+    app.job_queue.run_repeating(ciclo, interval=30, first=5)
 
     print("Bot corriendo...")
-    await app.run_polling()
+    app.run_polling()
 
 # ▶️ Ejecutar
-asyncio.run(main())
+if __name__ == "__main__":
+    main()
