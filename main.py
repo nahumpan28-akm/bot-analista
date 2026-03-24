@@ -1,41 +1,32 @@
-import telebot
+import os
 import random
 import time
-import os
+from telegram import Bot
 
-# 🔐 Variables de entorno (SEGURIDAD)
 TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-# Validación básica
 if not TOKEN or not CHAT_ID:
-    raise ValueError("Faltan TOKEN o CHAT_ID en variables de entorno")
+    raise ValueError("Faltan variables de entorno")
 
-bot = telebot.TeleBot(TOKEN)
+bot = Bot(token=TOKEN)
 
-# Capital inicial
 capital = 1500.0
-
-# Para evitar spam repetido
 ultimo_mensaje = ""
 
-# 📩 Función para enviar mensajes
 def enviar_mensaje(mensaje):
     global ultimo_mensaje
     try:
-        # Evita enviar el mismo mensaje repetido
         if mensaje != ultimo_mensaje:
-            bot.send_message(CHAT_ID, mensaje)
+            bot.send_message(chat_id=CHAT_ID, text=mensaje)
             ultimo_mensaje = mensaje
     except Exception as e:
-        print("Error enviando mensaje:", e)
+        print("Error:", e)
 
-# 🧠 Simulación de operación
 def operar():
     global capital
 
-    riesgos = ["muy bajo", "bajo"]
-    riesgo = random.choice(riesgos)
+    riesgo = random.choice(["muy bajo", "bajo"])
 
     if riesgo == "muy bajo":
         cambio = random.uniform(-15, 15)
@@ -46,11 +37,11 @@ def operar():
     capital += cambio
 
     if cambio >= 0:
-        resultado = f"Ganó {cambio:.2f} fichas"
         accion = "COMPRAR"
+        resultado = f"Ganó {cambio:.2f}"
     else:
-        resultado = f"Perdió {abs(cambio):.2f} fichas"
         accion = "VENDER"
+        resultado = f"Perdió {abs(cambio):.2f}"
 
     mensaje = (
         f"📊 Operación\n"
@@ -64,15 +55,16 @@ def operar():
     print(mensaje)
     enviar_mensaje(mensaje)
 
-# 🔁 Loop principal
 def main():
-    enviar_mensaje("🤖 Bot de trading iniciado correctamente")
-    print("Bot activo...")
+    enviar_mensaje("🤖 Bot activo")
+    print("Bot corriendo...")
 
     while True:
         operar()
-        time.sleep(30)  # más realista (30 segundos)
+        time.sleep(30)
 
+if __name__ == "__main__":
+    main()
 # ▶️ Ejecutar
 if __name__ == "__main__":
     main()
