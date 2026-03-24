@@ -1,6 +1,6 @@
 import os
 import random
-import time
+import asyncio
 from telegram import Bot
 
 TOKEN = os.getenv("TOKEN")
@@ -14,11 +14,12 @@ bot = Bot(token=TOKEN)
 capital = 1500.0
 ultimo_mensaje = ""
 
-def enviar_mensaje(mensaje):
+# 📩 AHORA ES ASYNC
+async def enviar_mensaje(mensaje):
     global ultimo_mensaje
     try:
         if mensaje != ultimo_mensaje:
-            bot.send_message(chat_id=CHAT_ID, text=mensaje)
+            await bot.send_message(chat_id=CHAT_ID, text=mensaje)
             ultimo_mensaje = mensaje
     except Exception as e:
         print("Error:", e)
@@ -53,18 +54,17 @@ def operar():
     )
 
     print(mensaje)
-    enviar_mensaje(mensaje)
+    return mensaje
 
-def main():
-    enviar_mensaje("🤖 Bot activo")
+# 🔁 LOOP ASYNC
+async def main():
+    await enviar_mensaje("🤖 Bot activo")
     print("Bot corriendo...")
 
     while True:
-        operar()
-        time.sleep(30)
+        mensaje = operar()
+        await enviar_mensaje(mensaje)
+        await asyncio.sleep(30)
 
-if __name__ == "__main__":
-    main()
-# ▶️ Ejecutar
-if __name__ == "__main__":
-    main()
+# ▶️ EJECUTAR
+asyncio.run(main())
